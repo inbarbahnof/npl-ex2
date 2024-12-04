@@ -116,7 +116,17 @@ def get_data(categories=None, portion=1.):
 
 # Q1,2
 
-def MLP_classification(portion=1., model=None):
+def count_trainable_parameters(model):
+    """
+    Counts the number of trainable parameters in a PyTorch model.
+    :param model: The PyTorch model.
+    :return: Total number of trainable parameters.
+    """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def MLP_classification(portion=1., model_type=None):
+    
     x_train, y_train, x_test, y_test = get_data(categories=category_dict.keys(), portion=portion)
 
     vectorizer = TfidfVectorizer(max_features=2000)
@@ -129,7 +139,8 @@ def MLP_classification(portion=1., model=None):
     
     num_features = x_train_tfidf.shape[1]  # TF-IDF feature size
     num_classes = len(np.unique(y_train))  # Number of classes
-    model = Perceptron(input_dim=num_features, num_classes=num_classes,model_type = model)
+    model = Perceptron(input_dim=num_features, num_classes=num_classes,model_type = model_type)
+    print(f"{model_type}-layer perceptron trainable parameters: {count_trainable_parameters(model)}")
 
     train_dataset = TextDataset(x_train_tensor, y_train_tensor)
     
@@ -176,7 +187,6 @@ def MLP_classification(portion=1., model=None):
 
         val_accuracy = val_correct_preds / val_total_preds
         val_accuracies.append(val_accuracy)
-
         print(f"Epoch {epoch + 1}/{NUM_OF_EPOCHS}, Loss: {train_losses[-1]:.4f}, Validation Accuracy: {val_accuracy:.4f}")
 
     model.eval()
@@ -186,60 +196,6 @@ def MLP_classification(portion=1., model=None):
     print(f"Final Test Accuracy: {accuracy:.4f}")
     
     return train_losses, val_accuracies
-
-
-# def MLP_classification(portion=1., model=None):
-#     """
-#     Perform linear classification
-#     :param portion: portion of the data to use
-#     :return: classification accuracy
-#     """
-#     print("start get data")
-#     x_train, y_train, x_test, y_test = get_data(categories=category_dict.keys(), portion=portion)
-#     print("finish get data")
-
-
-#     vectorizer = TfidfVectorizer(max_features=2000)
-#     x_train_tfidf = vectorizer.fit_transform(x_train).toarray()
-#     x_test_tfidf = vectorizer.transform(x_test).toarray()
-#     x_train_tensor = torch.tensor(x_train_tfidf, dtype=torch.float32)
-#     y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-#     x_test_tensor = torch.tensor(x_test_tfidf, dtype=torch.float32)
-#     y_test_tensor = torch.tensor(y_test, dtype=torch.long)
-#     num_features = x_train_tfidf.shape[1]  # TF-IDF feature size
-#     num_classes = len(np.unique(y_train))  # Number of classes
-#     model = model(input_dim=num_features, num_classes=num_classes)
-
-#     train_dataset = TextDataset(x_train_tensor, y_train_tensor)
-#     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-
-
-#     print("finish data load ")
-#         # Initialize model if not provided
-#     num_features = x_train_tfidf.shape[1]
-#     num_classes = len(np.unique(y_train))
-#     train_losses = []
-#     val_accuracies = []
-#     for epoch in range(NUM_OF_EPOCHS):
-#         print(f"starting epoch {epoch}")
-#         model.train()
-#         epoch_loss = 0.0
-#         for batch_X, batch_y in train_loader:
-#             batch_loss = model.train_step(batch_X, batch_y)  # Use the model's train_step
-#             epoch_loss += batch_loss
-
-#         train_losses.append(epoch_loss / len(train_loader))  # Average loss for this epoch
-#         print(f"Epoch {epoch + 1}, Loss: {train_losses[-1]:.4f}")
-
-#         model.eval()
-#         with torch.no_grad():
-#             y_pred = model(x_test_tensor).argmax(dim=1).numpy()
-#             accuracy = accuracy_score(y_test, y_pred)
-#             val_accuracies.append(accuracy)  # Append accuracy for this epoch
-
-#         print(f"Epoch {epoch + 1}, Loss: {train_losses[-1]:.4f}, Accuracy: {val_accuracies[-1]:.4f}")
-#     return train_losses, val_accuracies
-
 
 
 def plot_results(portions, all_train_losses, all_val_accuracies,title = ""):
@@ -368,6 +324,7 @@ def transformer_classification(portion=1. ,dev = "dev" ):
 
     # Model, tokenizer, and metric
     model = AutoModelForSequenceClassification.from_pretrained('distilroberta-base', num_labels=num_labels).to(dev)
+    print(f"Transformer model trainable parameters: {count_trainable_parameters(model)}")
     optimizer = AdamW(model.parameters(), lr= learning_rate)
     tokenizer = AutoTokenizer.from_pretrained('distilroberta-base')
     metric = evaluate.load("accuracy") # 
@@ -387,28 +344,66 @@ def transformer_classification(portion=1. ,dev = "dev" ):
 
     return total_epochs_losses , total_epochs_eval
 
+def plot_transformer_results(data_dict):
+
+    portions = [float(key) for key in data_dict.keys()]
+    epochs = range(1, len(data_dict['0.1']['losses']) + 1)  # Epochs start from 1
+    losses = {p: data_dict[str(p)]['losses'] for p in portions}
+    evaluate = {p: data_dict[str(p)]['evaluate'] for p in portions}
+
+    # Plot Losses 
+    plt.figure(figsize=(10, 5))
+    for p in portions:
+        plt.plot(epochs, losses[p], label=f'Loss Portion -  {p}')
+    plt.title('Loss per Epoch for Different Portions - Transformer Model')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # Plot Evaluations 
+    plt.figure(figsize=(10, 5))
+    for p in portions:
+        plt.plot(epochs, evaluate[p], label=f'Accuracy -  Portion {p}')
+
+    plt.title('Evaluation per Epoch for Different Portions - Transformer Model')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 
 if __name__ == "__main__":
     # Q1- Single Layer perceptron
     portions = [0.1, 0.2, 0.5, 1.0]
     print("start running - Single layer perceptron for Q1")
-    all_train_losses = []
-    all_val_accuracies = []
-
+    all_train_losses,all_val_accuracies = [],[]
     for portion in portions:
         print(f"Running for portion={portion}")
-        train_losses, val_accuracies = MLP_classification(portion=portion, model=Perceptron)
+        train_losses, val_accuracies = MLP_classification(portion=portion, model="single")
         all_train_losses.append(train_losses)
         all_val_accuracies.append(val_accuracies)
-
-    # Plot results
-    plot_results(portions, all_train_losses, all_val_accuracies)
-
+    plot_results(portions, all_train_losses, all_val_accuracies,title = "Single Layer")
+    
     # Q2 - multi-layer MLP
-    pass
+    print("start running - Multy layer perceptron for Q2")
+    all_train_losses,all_val_accuracies = [],[]
+    for portion in portions:
+        print(f"Running for portion={portion}")
+        train_losses, val_accuracies = MLP_classification(portion=portion, model="multy")
+        all_train_losses.append(train_losses)
+        all_val_accuracies.append(val_accuracies)
+    plot_results(portions, all_train_losses, all_val_accuracies,title = "Multy Layer")
 
     # Q3 - Transformer
-    print("\nTransformer results:")
+    print("start running - Transformer layer perceptron for Q3")
+    portion_dict = {}
     for p in portions[:2]:
         print(f"Portion: {p}")
-        transformer_classification(portion=p)
+        portion_dict[str(p)]= {"losses":0,"evaluate":0} 
+        portion_dict[str(p)]["losses"],portion_dict[str(p)]["evaluate"] = transformer_classification(portion=p)
+    plot_transformer_results(portion_dict)
+
+        
